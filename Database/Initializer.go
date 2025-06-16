@@ -89,8 +89,11 @@ func Init(jar string) {
 		DecompileJava("-jar", "tools/procyon-decompiler-0.6.0.jar", jar, "-o", filepath.Join(location, "createdabase", "src1"))
 	}
 
-	// 反编译依赖到src2
+	// 反编译依赖到src1
 	DecompileLibraries(location)
+
+	// 清理可能导致编译失败的文件
+	cleanupProblematicFiles(location)
 
 	// 创建数据库
 	Createdatabase(filepath.Join(location, "createdabase"))
@@ -121,6 +124,46 @@ func createDirectories(location string) {
 	os.Mkdir(filepath.Join(location, "createdabase", "src1"), 0755)
 	os.Mkdir(filepath.Join(location, "createdabase", "src2"), 0755)
 	os.Mkdir(filepath.Join(location, "createdabase", "build_classes"), 0755)
+}
+
+// cleanupProblematicFiles 清理可能导致编译失败的文件
+func cleanupProblematicFiles(location string) {
+	src1Dir := filepath.Join(location, "createdabase", "src1")
+	
+	// 删除所有.kt文件
+	ktFiles, err := filepath.Glob(filepath.Join(src1Dir, "**", "*.kt"))
+	if err == nil {
+		for _, ktFile := range ktFiles {
+			os.Remove(ktFile)
+			color.Yellow("删除Kotlin文件: %s", filepath.Base(ktFile))
+		}
+	}
+	
+	// 递归查找并删除所有.kt文件
+	filepath.Walk(src1Dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".kt" {
+			os.Remove(path)
+			color.Yellow("删除Kotlin文件: %s", path)
+		}
+		return nil
+	})
+	
+	// 删除所有module-info.java文件
+	filepath.Walk(src1Dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() && info.Name() == "module-info.java" {
+			os.Remove(path)
+			color.Yellow("删除模块信息文件: %s", path)
+		}
+		return nil
+	})
+	
+	color.Green("清理问题文件完成")
 }
 
 // finalizeDatabaseCreation 完成数据库创建的最后步骤
