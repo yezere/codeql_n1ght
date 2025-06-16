@@ -129,7 +129,7 @@ func createDirectories(location string) {
 // cleanupProblematicFiles 清理可能导致编译失败的文件
 func cleanupProblematicFiles(location string) {
 	src1Dir := filepath.Join(location, "createdabase", "src1")
-	
+
 	// 删除所有.kt文件
 	ktFiles, err := filepath.Glob(filepath.Join(src1Dir, "**", "*.kt"))
 	if err == nil {
@@ -138,7 +138,7 @@ func cleanupProblematicFiles(location string) {
 			color.Yellow("删除Kotlin文件: %s", filepath.Base(ktFile))
 		}
 	}
-	
+
 	// 递归查找并删除所有.kt文件
 	filepath.Walk(src1Dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -150,7 +150,7 @@ func cleanupProblematicFiles(location string) {
 		}
 		return nil
 	})
-	
+
 	// 删除所有module-info.java文件
 	filepath.Walk(src1Dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -162,7 +162,7 @@ func cleanupProblematicFiles(location string) {
 		}
 		return nil
 	})
-	
+
 	color.Green("清理问题文件完成")
 }
 
