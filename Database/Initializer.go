@@ -151,7 +151,7 @@ func cleanupProblematicFiles(location string) {
 		return nil
 	})
 
-	// 删除所有module-info.java文件
+	// 递归删除所有module-info.java文件，防止报错
 	filepath.Walk(src1Dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
