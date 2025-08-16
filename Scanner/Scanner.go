@@ -71,10 +71,7 @@ func RunScan() error {
 	// 显示扫描总结
 	displayScanSummary(results)
 
-	// 生成并打开HTML报告
-	if err := generateHTMLReport(); err != nil {
-		Common.LogError("生成HTML报告失败: %v", err)
-	}
+
 
 	return nil
 }
