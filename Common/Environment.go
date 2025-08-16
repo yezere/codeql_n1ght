@@ -5,7 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+
+	"github.com/fatih/color"
 )
 
 // SetupEnvironment 设置所有工具的环境变量
@@ -81,7 +84,18 @@ func setupCodeQLEnvironment(toolsDir string) error {
 		return fmt.Errorf("添加CodeQL到PATH失败: %v", err)
 	}
 
+	// 获取系统内存并计算一半
+	memoryGB := getHalfSystemMemoryGB()
+	color.Green("获取内存", memoryGB, "\n")
+	jvmArgs := fmt.Sprintf("-Xmx%dg -Xms%dg", memoryGB, memoryGB)
+
+	// 设置SEMMLE_JAVA_EXTRACTOR_JVM_ARGS
+	if err := os.Setenv("SEMMLE_JAVA_EXTRACTOR_JVM_ARGS", jvmArgs); err != nil {
+		return fmt.Errorf("设置SEMMLE_JAVA_EXTRACTOR_JVM_ARGS失败: %v", err)
+	}
+
 	fmt.Printf("CodeQL环境变量设置完成: PATH中已添加 %s\n", codeqlPath)
+	fmt.Printf("SEMMLE_JAVA_EXTRACTOR_JVM_ARGS已设置为: %s\n", jvmArgs)
 	return nil
 }
 
@@ -238,4 +252,55 @@ func PrintToolVersions() {
 		fmt.Printf("%s: %s\n", tool, version)
 	}
 	fmt.Println("===================")
+}
+
+// getHalfSystemMemoryGB 获取系统内存的一半（以GB为单位）
+func getHalfSystemMemoryGB() int {
+	// 获取系统总内存（字节）
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	// 使用runtime包获取系统内存信息
+	// 注意：runtime.MemStats主要用于Go程序的内存统计，这里我们使用一个更直接的方法
+	// 在Windows上，我们可以通过执行系统命令来获取内存信息
+	if runtime.GOOS == "windows" {
+		return getWindowsMemoryGB() / 2
+	}
+
+	// 对于其他系统，使用默认值
+	return 16 // 默认16GB
+}
+
+// getWindowsMemoryGB 获取Windows系统的总内存（GB）
+func getWindowsMemoryGB() int {
+	// 使用wmic命令获取总物理内存
+	cmd := fmt.Sprintf("wmic computersystem get TotalPhysicalMemory /value")
+	exec := NewCommandExecutor(".")
+	output, err := exec.ExecuteCommand("cmd", "/c", cmd)
+	if err != nil {
+		fmt.Printf("获取系统内存失败，使用默认值16GB: %v\n", err)
+		return 16
+	}
+
+	// 解析输出
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "TotalPhysicalMemory=") {
+			parts := strings.Split(line, "=")
+			if len(parts) == 2 {
+				memoryBytes := strings.TrimSpace(parts[1])
+				if memoryInt, err := strconv.ParseInt(memoryBytes, 10, 64); err == nil {
+					// 转换为GB（1GB = 1024^3 bytes）
+					memoryGB := int(memoryInt / (1024 * 1024 * 1024))
+					if memoryGB > 0 {
+						return memoryGB
+					}
+				}
+			}
+		}
+	}
+
+	// 如果解析失败，返回默认值
+	fmt.Println("解析系统内存失败，使用默认值32GB")
+	return 32
 }

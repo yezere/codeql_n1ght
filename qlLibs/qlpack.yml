@@ -1,0 +1,10 @@
+---
+name: n1ght/qlinspector
+version: 1.0.0
+library: false
+authors: n1ght
+dependencies:
+  codeql/java-all: "*"
+defaultSuite:
+  query: queries/main.ql
+  

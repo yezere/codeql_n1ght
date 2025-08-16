@@ -92,6 +92,13 @@ func Init(jar string) {
 	// 反编译依赖到src1
 	DecompileLibraries(location)
 
+	// 复制额外源码目录到src1（如果指定了的话）
+	src1Dir := filepath.Join(location, "createdabase", "src1")
+	if err := Common.CopyExtraSourceToSrc1(Common.ExtraSourceDir, src1Dir); err != nil {
+		color.Red("复制额外源码失败: %v", err)
+		return
+	}
+
 	// 清理可能导致编译失败的文件
 	cleanupProblematicFiles(location)
 
@@ -139,17 +146,22 @@ func cleanupProblematicFiles(location string) {
 		}
 	}
 
-	// 递归查找并删除所有.kt文件
-	filepath.Walk(src1Dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !info.IsDir() && filepath.Ext(path) == ".kt" {
-			os.Remove(path)
-			color.Yellow("删除Kotlin文件: %s", path)
-		}
-		return nil
-	})
+	// // 递归遍历src1目录，删除除.java文件之外的所有文件
+	// filepath.Walk(src1Dir, func(path string, info os.FileInfo, err error) error {
+	// 	if err != nil {
+	// 		return nil
+	// 	}
+	// 	// 跳过目录
+	// 	if info.IsDir() {
+	// 		return nil
+	// 	}
+	// 	// 保留.java文件，删除其他所有文件
+	// 	if filepath.Ext(path) != ".java" {
+	// 		os.Remove(path)
+	// 		color.Yellow("删除非Java文件: %s", path)
+	// 	}
+	// 	return nil
+	// })
 
 	// 递归删除所有module-info.java文件，防止报错
 	filepath.Walk(src1Dir, func(path string, info os.FileInfo, err error) error {
@@ -176,8 +188,14 @@ func finalizeDatabaseCreation(location string) {
 	} else {
 		color.Green("数据库移动成功")
 	}
-	color.Green("数据库生成完成，删除output和createdatabase")
-	Common.RemoveFile(filepath.Join(location, "createdabase"))
-	Common.RemoveFile(filepath.Join(location, "output"))
-	color.Green("删除成功")
+
+	if Common.KeepTempFiles {
+		color.Yellow("保留临时文件模式：跳过清理output和createdatabase目录")
+		color.Green("数据库生成完成")
+	} else {
+		color.Green("数据库生成完成，删除output和createdatabase")
+		Common.RemoveFile(filepath.Join(location, "createdabase"))
+		Common.RemoveFile(filepath.Join(location, "output"))
+		color.Green("删除成功")
+	}
 }

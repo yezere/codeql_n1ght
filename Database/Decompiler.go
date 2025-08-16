@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
@@ -159,40 +160,21 @@ func DecompileLibraries(location string) {
 
 	// 反编译选中的文件
 	fmt.Printf("\nDecompiling %d selected jar files...\n", len(selectedFiles))
-	for _, selectedFile := range selectedFiles {
-		// 找到完整路径
-		for _, jarFile := range jarFiles {
-			if filepath.Base(jarFile) == selectedFile {
-				fmt.Printf("Decompiling %s...\n", selectedFile)
-				outputDir := filepath.Join(location, "createdabase", "src1")
-
-				var err error
-			// 根据反编译器类型选择不同的反编译方式
-			switch Common.DecompilerType {
-			case "fernflower":
-				err = decompileWithFernflower(jarFile, outputDir)
-				if err != nil {
-					color.Red("Fernflower反编译失败: %v，切换到Procyon反编译器\n", err)
-					err = decompileWithProcyon(jarFile, outputDir)
-					if err != nil {
-						color.Red("Procyon反编译也失败: %v\n", err)
-					} else {
-						fmt.Printf("使用Procyon反编译器成功完成 %s\n", selectedFile)
-					}
+	
+	if Common.UseGoroutine {
+		// 使用goroutine并发反编译
+		decompileWithGoroutines(selectedFiles, jarFiles, location)
+	} else {
+		// 串行反编译
+		for _, selectedFile := range selectedFiles {
+			// 找到完整路径
+			for _, jarFile := range jarFiles {
+				if filepath.Base(jarFile) == selectedFile {
+					fmt.Printf("Decompiling %s...\n", selectedFile)
+					outputDir := filepath.Join(location, "createdabase", "src1")
+					decompileJarFile(jarFile, outputDir, selectedFile)
+					break
 				}
-			default: // procyon
-				err = decompileWithProcyon(jarFile, outputDir)
-				if err != nil {
-					color.Red("Procyon反编译失败: %v，切换到Fernflower反编译器\n", err)
-					err = decompileWithFernflower(jarFile, outputDir)
-					if err != nil {
-						color.Red("Fernflower反编译也失败: %v\n", err)
-					} else {
-						fmt.Printf("使用Fernflower反编译器成功完成 %s\n", selectedFile)
-					}
-				}
-			}
-				break
 			}
 		}
 	}
@@ -314,4 +296,91 @@ func extractJar(jarFile, destDir string) error {
 
 	fmt.Printf("jar文件解压完成: %s\n", destDir)
 	return nil
+}
+
+// decompileJarFile 反编译单个jar文件
+func decompileJarFile(jarFile, outputDir, selectedFile string) {
+	var err error
+	// 根据反编译器类型选择不同的反编译方式
+	switch Common.DecompilerType {
+	case "fernflower":
+		err = decompileWithFernflower(jarFile, outputDir)
+		if err != nil {
+			color.Red("Fernflower反编译失败: %v，切换到Procyon反编译器\n", err)
+			err = decompileWithProcyon(jarFile, outputDir)
+			if err != nil {
+				color.Red("Procyon反编译也失败: %v\n", err)
+			} else {
+				fmt.Printf("使用Procyon反编译器成功完成 %s\n", selectedFile)
+			}
+		}
+	default: // procyon
+		err = decompileWithProcyon(jarFile, outputDir)
+		if err != nil {
+			color.Red("Procyon反编译失败: %v，切换到Fernflower反编译器\n", err)
+			err = decompileWithFernflower(jarFile, outputDir)
+			if err != nil {
+				color.Red("Fernflower反编译也失败: %v\n", err)
+			} else {
+				fmt.Printf("使用Fernflower反编译器成功完成 %s\n", selectedFile)
+			}
+		}
+	}
+}
+
+// decompileWithGoroutines 使用goroutine并发反编译
+func decompileWithGoroutines(selectedFiles, jarFiles []string, location string) {
+	// 创建工作队列
+	type DecompileTask struct {
+		jarFile      string
+		selectedFile string
+		outputDir    string
+	}
+
+	tasks := make(chan DecompileTask, len(selectedFiles))
+	var wg sync.WaitGroup
+
+	// 启动worker goroutines
+	maxWorkers := Common.MaxGoroutines
+	if maxWorkers <= 0 {
+		maxWorkers = 4 // 默认值
+	}
+
+	fmt.Printf("启动 %d 个goroutine进行并发反编译...\n", maxWorkers)
+
+	// 启动worker
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for task := range tasks {
+				fmt.Printf("[Worker %d] Decompiling %s...\n", workerID, task.selectedFile)
+				decompileJarFile(task.jarFile, task.outputDir, task.selectedFile)
+				fmt.Printf("[Worker %d] Completed %s\n", workerID, task.selectedFile)
+			}
+		}(i)
+	}
+
+	// 发送任务到队列
+	for _, selectedFile := range selectedFiles {
+		// 找到完整路径
+		for _, jarFile := range jarFiles {
+			if filepath.Base(jarFile) == selectedFile {
+				outputDir := filepath.Join(location, "createdabase", "src1")
+				tasks <- DecompileTask{
+					jarFile:      jarFile,
+					selectedFile: selectedFile,
+					outputDir:    outputDir,
+				}
+				break
+			}
+		}
+	}
+
+	// 关闭任务队列
+	close(tasks)
+
+	// 等待所有goroutine完成
+	wg.Wait()
+	fmt.Println("所有goroutine反编译任务完成")
 }

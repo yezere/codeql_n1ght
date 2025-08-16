@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 
 	"codeql_n1ght/Common"
 )
@@ -20,7 +21,7 @@ func Createdatabase(location string) {
 		"--source-root", "./",
 		"--overwrite",
 		"--ram=51200",
-		"--threads=400",
+		"--threads="+strconv.Itoa(Common.CodeQLThreads),
 	)
 	cmd.Dir = location
 	// 获取标准输出管道
@@ -82,7 +83,7 @@ func GenerateBuildXML(location string) error {
 		return fmt.Errorf("create build.xml failed: %v", err)
 	}
 	defer f.Close()
-	
+
 	_, err = f.Write([]byte(buildxml))
 	return err
 }

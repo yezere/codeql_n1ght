@@ -4,13 +4,75 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/schollz/progressbar/v3"
 )
+
+// LogLevel 日志级别
+type LogLevel int
+
+const (
+	LogLevelInfo LogLevel = iota
+	LogLevelWarn
+	LogLevelError
+)
+
+// LogMessage 统一的日志输出函数
+func LogMessage(level LogLevel, format string, args ...interface{}) {
+	switch level {
+	case LogLevelInfo:
+		color.White(format, args...)
+	case LogLevelWarn:
+		color.Yellow(format, args...)
+	case LogLevelError:
+		color.Red(format, args...)
+	}
+}
+
+// LogError 记录错误信息
+func LogError(format string, args ...interface{}) {
+	LogMessage(LogLevelError, format, args...)
+}
+
+// LogWarn 记录警告信息
+func LogWarn(format string, args ...interface{}) {
+	LogMessage(LogLevelWarn, format, args...)
+}
+
+// LogInfo 记录信息
+func LogInfo(format string, args ...interface{}) {
+	LogMessage(LogLevelInfo, format, args...)
+}
+
+// ValidateFile 验证文件是否存在且可读
+func ValidateFile(filePath string) error {
+	if !FileExists(filePath) {
+		return fmt.Errorf("文件不存在: %s", filePath)
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("无法打开文件: %v", err)
+	}
+	defer file.Close()
+
+	return nil
+}
+
+// IsDirectory 检查路径是否为目录
+func IsDirectory(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
+}
 
 // DownloadFile 下载文件的通用函数（带进度条）
 func DownloadFile(url, filepath string) error {
@@ -127,4 +189,110 @@ func RemoveFile(path string) error {
 		// 如果是文件，删除文件
 		return os.Remove(path)
 	}
+}
+
+// SafeExecute 安全执行函数，捕获panic
+func SafeExecute(fn func() error, errorMsg string) error {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("发生panic: %v", r)
+		}
+	}()
+
+	if err := fn(); err != nil {
+		LogError("%s: %v", errorMsg, err)
+		return err
+	}
+	return nil
+}
+
+// CopyFile 复制单个文件
+func CopyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// 确保目标目录存在
+	if err := CreateDirIfNotExists(filepath.Dir(dst)); err != nil {
+		return err
+	}
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	if err != nil {
+		return err
+	}
+
+	// 复制文件权限
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(dst, srcInfo.Mode())
+}
+
+// CopyDirectory 递归复制整个目录
+func CopyDirectory(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if !srcInfo.IsDir() {
+		return fmt.Errorf("源路径不是目录: %s", src)
+	}
+
+	// 创建目标目录
+	if err := CreateDirIfNotExists(dst); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			// 递归复制子目录
+			if err := CopyDirectory(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			// 复制文件
+			if err := CopyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// CopyExtraSourceToSrc1 将额外源码目录复制到src1目录
+func CopyExtraSourceToSrc1(extraSourceDir, src1Dir string) error {
+	if extraSourceDir == "" {
+		return nil // 没有指定额外源码目录
+	}
+
+	LogInfo("开始复制额外源码目录: %s -> %s", extraSourceDir, src1Dir)
+
+	// 复制所有文件和子目录到src1
+	err := CopyDirectory(extraSourceDir, src1Dir)
+	if err != nil {
+		return fmt.Errorf("复制额外源码失败: %v", err)
+	}
+
+	LogInfo("额外源码复制完成")
+	return nil
 }
