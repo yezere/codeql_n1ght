@@ -16,7 +16,8 @@ require (
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/term v0.28.0 // indirect
-	golang.org/x/text v0.4.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
 )

@@ -12,6 +12,7 @@ func InitFlag() {
 	flag.StringVar(&CreateJar, "database", "", "通过jar包一键生成数据库")
 	flag.BoolVar(&ScanMode, "scan", false, "启用扫描模式")
 
+
 	// 安装模式专用参数（只能与-install一起使用）
 	flag.StringVar(&JDKDownloadURL, "jdk", "", "指定JDK下载地址（仅限-install模式）")
 	flag.StringVar(&AntDownloadURL, "ant", "", "指定Apache Ant下载地址（仅限-install模式）")
@@ -27,6 +28,8 @@ func InitFlag() {
 
 	// 数据库模式专用参数（只能与-database一起使用）
 	flag.StringVar(&ExtraSourceDir, "dir", "", "指定额外的源码目录，将复制到src1中一起生成数据库（仅限-database模式）")
+
+
 
 	// 通用配置参数
 	flag.StringVar(&DecompilerType, "decompiler", "procyon", "选择反编译器类型 (procyon|fernflower)")
@@ -53,7 +56,9 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  -database string\n")
 	fmt.Fprintf(os.Stderr, "        通过jar/war包一键生成CodeQL数据库\n")
 	fmt.Fprintf(os.Stderr, "  -scan\n")
-	fmt.Fprintf(os.Stderr, "        启用扫描模式，对CodeQL数据库执行查询\n\n")
+	fmt.Fprintf(os.Stderr, "        启用扫描模式，对CodeQL数据库执行查询\n")
+	fmt.Fprintf(os.Stderr, "  -mcp-server\n")
+	fmt.Fprintf(os.Stderr, "        启动MCP服务器模式，提供远程API接口\n\n")
 
 	fmt.Fprintf(os.Stderr, "安装模式专用选项（与-install配合使用）:\n")
 	fmt.Fprintf(os.Stderr, "  -jdk string\n")
@@ -76,6 +81,12 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "数据库模式专用选项（与-database配合使用）:\n")
 	fmt.Fprintf(os.Stderr, "  -dir string\n")
 	fmt.Fprintf(os.Stderr, "        指定额外的源码目录，将复制到src1中一起生成数据库\n\n")
+
+	fmt.Fprintf(os.Stderr, "MCP服务器模式专用选项（与-mcp-server配合使用）:\n")
+	fmt.Fprintf(os.Stderr, "  -mcp-port int\n")
+	fmt.Fprintf(os.Stderr, "        MCP服务器端口 (默认 8080)\n")
+	fmt.Fprintf(os.Stderr, "  -mcp-host string\n")
+	fmt.Fprintf(os.Stderr, "        MCP服务器主机地址 (默认 \"localhost\")\n\n")
 
 	fmt.Fprintf(os.Stderr, "通用选项:\n")
 	fmt.Fprintf(os.Stderr, "  -decompiler string\n")
@@ -106,4 +117,8 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  %s -scan -db ./mydb -ql ./myqueries -goroutine -max-goroutines 8\n\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  # 清理缓存后扫描（确保修改的QL文件生效）\n")
 	fmt.Fprintf(os.Stderr, "  %s -scan -clean-cache\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  # 启动MCP服务器（默认端口8080）\n")
+	fmt.Fprintf(os.Stderr, "  %s -mcp-server\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  # 启动MCP服务器（自定义端口和主机）\n")
+	fmt.Fprintf(os.Stderr, "  %s -mcp-server -mcp-port 9090 -mcp-host 0.0.0.0\n\n", os.Args[0])
 }
