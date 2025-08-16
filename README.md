@@ -62,6 +62,10 @@ go build -o codeql_n1ght
 
 # 反编译自己想要的lib，将jar包放入lib文件夹下，打包成zip
 ./codeql_n1ght -database your-zip.zip
+
+# 使用 -deps 控制依赖选择（跳过 TUI）
+./codeql_n1ght -database your-app.jar -deps none   # 空依赖（跳过依赖反编译）
+./codeql_n1ght -database your-app.jar -deps all    # 全依赖（自动反编译所有依赖）
 ```
 
 ### 3. 执行安全扫描
@@ -89,9 +93,16 @@ go build -o codeql_n1ght
 | 参数 | 说明 | 示例 |
 |------|------|------|
 | `-install` | 一键安装环境 | `./codeql_n1ght -install` |
-| `-database` | 指定要分析的 JAR/WAR 文件 | `./codeql_n1ght -database app.jar` |
+| `-database` | 指定要分析的 JAR/WAR/ZIP 文件 | `./codeql_n1ght -database app.jar` |
 | `-scan` | 执行 CodeQL 安全扫描 | `./codeql_n1ght -scan` |
 | `-decompiler` | 选择反编译器 (procyon\|fernflower) | `./codeql_n1ght -database app.jar -decompiler fernflower` |
+
+#### 数据库模式参数（仅与 `-database` 一起使用）
+
+| 参数 | 说明 | 示例 |
+|------|------|------|
+| `-dir` | 指定额外源码目录（复制到 src1 一起生成数据库） | `./codeql_n1ght -database app.jar -dir ./extra_src` |
+| `-deps` | 依赖选择：`none`=空依赖，`all`=全依赖；不指定进入交互选择（TUI） | `./codeql_n1ght -database app.jar -deps all` |
 
 #### 扫描功能参数
 
@@ -183,6 +194,25 @@ codeql_n1ght/
 ├── scan_report.html # HTML 格式扫描报告
 └── main.go          # 主程序入口
 ```
+
+## 🤖 MCP 集成（Python）快速开始
+
+你可以用一个 Python 的 MCP 工具服务来包装本程序（codeql_n1ght.exe），让 AI 通过 MCP 工具直接调用：
+
+- 工具 1：setup_environment（安装/配置环境）
+  - 对应命令：`-install`（可选 `-jdk`/`-ant`/`-codeql`）
+- 工具 2：create_codeql_database（创建数据库）
+  - 对应命令：`-database <jar|war|zip>`（可选 `-dir`、`-decompiler`、`-deps none|all`、`-goroutine`、`-max-goroutines`）
+- 工具 3：run_codeql_scan（执行扫描）
+  - 对应命令：`-scan`（可选 `-db`、`-ql`、`-threads`、`-goroutine`、`-max-goroutines`、`-clean-cache`）
+
+建议：
+- 在 Windows 上用 `subprocess.run(..., shell=False)` 调用 `codeql_n1ght.exe`，注意路径包含空格时使用 `Path` 拼接。
+- 长时间任务请开启超时与实时输出转发（stdout/stderr 流式读取）。
+- 将命令行参数与 MCP 工具的 JSON Schema 一一对应，返回结构里包含：`success`、`message`、`artifacts`（例如数据库路径、报告路径）。
+
+完整的 Python 示例（包含 Schema 与错误处理）请参考文档：
+- DOCUMENTATION.md 的 “MCP 服务集成准备（Python 版）” 章节。
 
 ## 🔧 配置说明
 

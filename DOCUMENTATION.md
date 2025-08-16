@@ -1225,130 +1225,199 @@ AI: "扫描完成！发现了3个高危漏洞和5个中危漏洞。详细报告�
 - [ ] 添加进度报告功能
 - [ ] 集成日志和监控
 
+### 🐍 MCP 服务集成准备（Python 版）
+
+本项目不内置运行中的 MCP 服务器；推荐用 Python 实现一个轻量的 MCP 工具服务，对 codeql_n1ght.exe 的命令行进行安全封装，供 AI 通过 MCP 直接调用。
+
+#### 目标与原则
+- 以工具为中心：暴露三个稳定工具，分别对应安装、数据库创建与扫描。
+- 参数即协议：工具 JSON Schema 与 CLI 参数一一映射，确保 AI 易于调用与校验。
+- 安全健壮：Windows 上使用 `subprocess.run(..., shell=False)`；对长任务支持流式输出与超时；对错误进行分级与结构化返回。
+
+#### 工具定义与参数映射
+
+1) setup_environment —— 安装/配置环境
+- 映射命令：`codeql_n1ght.exe -install [ -jdk URL ] [ -ant URL ] [ -codeql URL ]`
+- JSON Schema：
+```json
+{
+  "type": "object",
+  "properties": {
+    "jdk_url": {"type": "string", "description": "自定义 JDK 下载地址", "nullable": true},
+    "ant_url": {"type": "string", "description": "自定义 Ant 下载地址", "nullable": true},
+    "codeql_url": {"type": "string", "description": "自定义 CodeQL 下载地址", "nullable": true}
+  },
+  "required": [],
+  "additionalProperties": false
+}
+```
+- 返回建议：`{ success: bool, message: string, tools_dir?: string }`
+
+2) create_codeql_database —— 创建数据库
+- 映射命令：`codeql_n1ght.exe -database <jar|war|zip> [ -dir extra_src ] [ -decompiler procyon|fernflower ] [ -deps none|all ]`
+- JSON Schema：
+```json
+{
+  "type": "object",
+  "properties": {
+    "file_path": {"type": "string", "description": "JAR/WAR/ZIP 路径"},
+    "decompiler": {"type": "string", "enum": ["procyon", "fernflower"], "default": "procyon"},
+    "extra_source_dir": {"type": "string", "description": "额外源码目录（复制到 src1）", "nullable": true},
+    "deps": {"type": "string", "enum": ["none", "all"], "description": "依赖选择模式：none=空依赖，all=全依赖；不传则进入交互选择(TUI)", "nullable": true}
+  },
+  "required": ["file_path"],
+  "additionalProperties": false
+}
+```
+- 返回建议：`{ success: bool, message: string, database_path?: string, artifacts?: object }`
+
+3) run_codeql_scan —— 执行扫描
+- 映射命令：`codeql_n1ght.exe -scan [ -db DB_PATH ] [ -ql QL_PATH ] [ -threads N ] [ -goroutine ] [ -max-goroutines N ] [ -clean-cache ]`
+- JSON Schema：
+```json
+{
+  "type": "object",
+  "properties": {
+    "database_path": {"type": "string", "description": "CodeQL 数据库路径", "nullable": true},
+    "query_path": {"type": "string", "description": "QL 文件或目录路径", "nullable": true},
+    "threads": {"type": "integer", "minimum": 1, "description": "CodeQL 线程数", "nullable": true},
+    "concurrent": {"type": "boolean", "description": "是否启用并发扫描（等价 -goroutine）", "default": false},
+    "max_goroutines": {"type": "integer", "minimum": 1, "description": "最大并发数", "nullable": true},
+    "clean_cache": {"type": "boolean", "description": "清理 CodeQL 缓存", "default": false}
+  },
+  "required": [],
+  "additionalProperties": false
+}
+```
+- 返回建议：`{ success: bool, message: string, results_path?: string, report_path?: string }`
+
+#### 最小参考实现（可直接改造）
+
+以下示例展示了如何用 Python 封装三个工具。你可以把它嵌入到任意 MCP 服务器框架中（HTTP、WebSocket 或 Anthropic MCP Python SDK 等）。
+
+```python
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import List, Dict, Any
+
+EXE_NAME = "codeql_n1ght.exe"  # 若在 PATH 外，请改为绝对路径
+
+
+def _exe_path() -> str:
+    p = Path(EXE_NAME)
+    if p.exists():
+        return str(p)
+    # 尝试在当前工作目录查找 tools 或上级目录
+    candidates = [
+        Path.cwd() / EXE_NAME,
+        Path.cwd() / "bin" / EXE_NAME,
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return EXE_NAME  # 退回交由 PATH 解析
+
+
+def _run(args: List[str], timeout: int | None = None) -> Dict[str, Any]:
+    # Windows 安全：shell=False，参数分离
+    try:
+        proc = subprocess.run(
+            args,
+            shell=False,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+        )
+        ok = (proc.returncode == 0)
+        return {
+            "success": ok,
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+        }
+    except subprocess.TimeoutExpired as e:
+        return {"success": False, "error": f"timeout: {e}", "exit_code": None}
+    except FileNotFoundError:
+        return {"success": False, "error": f"not found: {args[0]}", "exit_code": None}
+
+
+# 工具 1：安装环境
+
+def setup_environment(jdk_url: str | None = None, ant_url: str | None = None, codeql_url: str | None = None) -> Dict[str, Any]:
+    exe = _exe_path()
+    cmd = [exe, "-install"]
+    if jdk_url:
+        cmd += ["-jdk", jdk_url]
+    if ant_url:
+        cmd += ["-ant", ant_url]
+    if codeql_url:
+        cmd += ["-codeql", codeql_url]
+    res = _run(cmd)
+    if res.get("success"):
+        res["message"] = "environment setup completed"
+        res["tools_dir"] = str(Path.cwd() / "tools")
+    return res
+
+
+# 工具 2：创建数据库
+
+def create_codeql_database(file_path: str, decompiler: str = "procyon", extra_source_dir: str | None = None, deps: str | None = None) -> Dict[str, Any]:
+    exe = _exe_path()
+    cmd = [exe, "-database", file_path]
+    if extra_source_dir:
+        cmd += ["-dir", extra_source_dir]
+    if decompiler:
+        cmd += ["-decompiler", decompiler]
+    if deps in {"none", "all"}:  # 不传则进入交互选择
+        cmd += ["-deps", deps]
+    res = _run(cmd)
+    if res.get("success"):
+        # 默认数据库目录名称由程序管理，这里返回常用位置提示
+        res["message"] = "database created"
+    return res
+
+
+# 工具 3：执行扫描
+
+def run_codeql_scan(database_path: str | None = None, query_path: str | None = None, threads: int | None = None, concurrent: bool = False, max_goroutines: int | None = None, clean_cache: bool = False) -> Dict[str, Any]:
+    exe = _exe_path()
+    cmd = [exe, "-scan"]
+    if database_path:
+        cmd += ["-db", database_path]
+    if query_path:
+        cmd += ["-ql", query_path]
+    if threads:
+        cmd += ["-threads", str(threads)]
+    if concurrent:
+        cmd += ["-goroutine"]
+    if max_goroutines:
+        cmd += ["-max-goroutines", str(max_goroutines)]
+    if clean_cache:
+        cmd += ["-clean-cache"]
+    res = _run(cmd)
+    if res.get("success"):
+        res["message"] = "scan completed"
+        # 常规输出文件位置（由程序生成），可在此补充探测逻辑
+        res["results_path"] = str(Path.cwd() / "results.sarif")
+        res["report_path"] = str(Path.cwd() / "scan_report.html")
+    return res
+```
+
+提示：若你使用 Anthropic MCP Python SDK，可将上述三个函数分别注册为工具，并把各自的 JSON Schema 作为工具的参数校验；AI 调用时按 Schema 构造参数即可。
+
+#### 使用建议
+- 路径与空格：使用 `pathlib.Path` 统一拼接，避免手写转义；不要拼接成单字符串传给 `subprocess`。
+- 超时与中断：为长任务提供超时；必要时支持取消（在 SDK 层面实现）。
+- 输出与日志：将 `stdout` 与 `stderr` 作为结构化字段返回，必要时进行截断与分级（info/warn/error）。
+- 参数校验：在 MCP 工具层严格校验路径存在性、枚举值（如 `deps`）与类型，以减少失败重试成本。
+- 幂等性：安装工具命令可多次调用；数据库/扫描命令建议明确输入输出目录，避免覆盖。
+
 ## 故障排除
-
-### 🐛 常见问题及解决方案
-
-#### 1. 安装相关问题
-
-**问题**: 下载工具失败
-```
-Error: 下载JDK失败: Get "https://download.java.net/...": dial tcp: lookup download.java.net: no such host
-```
-
-**解决方案**:
-```bash
-# 1. 检查网络连接
-ping download.java.net
-
-# 2. 使用代理
-export HTTP_PROXY=http://proxy.company.com:8080
-export HTTPS_PROXY=http://proxy.company.com:8080
-
-# 3. 使用自定义下载地址
-./codeql_n1ght -install -jdk https://your-mirror.com/jdk-11.zip
-```
-
-**问题**: 权限不足
-```
-Error: mkdir tools: permission denied
-```
-
-**解决方案**:
-```bash
-# 1. 检查目录权限
-ls -la .
-
-# 2. 修改权限
-chmod 755 .
-
-# 3. 使用sudo（不推荐）
-sudo ./codeql_n1ght -install
-```
-
-#### 2. 反编译相关问题
-
-**问题**: 反编译器执行失败
-```
-Error: 反编译失败: exit status 1
-```
-
-**解决方案**:
-```bash
-# 1. 检查Java环境
-java -version
-
-# 2. 检查反编译器文件
-ls -la tools/java-decompiler.jar
-
-# 3. 尝试不同的反编译器
-./codeql_n1ght -database app.jar -decompiler fernflower
-
-# 4. 启用调试模式
-./codeql_n1ght -database app.jar -keep-temp
-```
-
-**问题**: 内存不足
-```
-Error: java.lang.OutOfMemoryError: Java heap space
-```
-
-**解决方案**:
-```bash
-# 1. 增加JVM内存
-export JAVA_OPTS="-Xmx8g -Xms2g"
-
-# 2. 分批处理大文件
-# 将大JAR拆分为多个小文件处理
-
-# 3. 使用并发处理
-./codeql_n1ght -database app.jar -goroutine -max-goroutines 2
-```
-
-#### 3. 数据库创建问题
-
-**问题**: CodeQL数据库创建失败
-```
-Error: A fatal error occurred: Could not create database
-```
-
-**解决方案**:
-```bash
-# 1. 检查CodeQL版本
-codeql version
-
-# 2. 检查构建文件
-cat build.xml
-
-# 3. 手动执行构建
-ant -f build.xml
-
-# 4. 减少线程数
-./codeql_n1ght -database app.jar -threads 10
-```
-
-#### 4. 扫描相关问题
-
-**问题**: 扫描无结果
-```
-Warning: 扫描完成，但未发现任何问题
-```
-
-**解决方案**:
-```bash
-# 1. 检查QL文件
-ls -la qlLibs/queries/
-
-# 2. 验证数据库
-codeql database info ./lib
-
-# 3. 测试简单查询
-echo 'select "Hello World"' > test.ql
-codeql query run test.ql -d ./lib
-
-# 4. 清理缓存
-./codeql_n1ght -scan -db ./lib -ql ./qlLibs -clean-cache
-```
 
 ### 📊 性能优化
 
