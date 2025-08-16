@@ -139,44 +139,53 @@ func DecompileLibraries(location string) {
 	// 清空当前输出
 	// clearScreen()
 
-	// 使用survey的MultiSelect进行交互式选择
+	// 使用survey的MultiSelect进行交互式选择或根据 -deps 自动选择
 	var selectedFiles []string
-	prompt := &survey.MultiSelect{
-		Message:  "Select jar files to decompile (use arrow keys to navigate, space to select/deselect, enter to confirm):",
-		Options:  options,
-		PageSize: 40, // 每页显示40个选项
-	}
-
-	err = survey.AskOne(prompt, &selectedFiles)
-	if err != nil {
-		fmt.Printf("Error during selection: %v\n", err)
-		return
-	}
-
-	if len(selectedFiles) == 0 {
-		fmt.Println("No files selected, skipping jar decompilation.")
-		return
+	mode := strings.ToLower(Common.DependencySelection)
+	if mode == "none" {
+	    fmt.Println("Dependency selection set to 'none'; skipping jar decompilation.")
+	    return
+	} else if mode == "all" {
+	    selectedFiles = options
+	    fmt.Printf("Auto-selected all %d jar files for decompilation.\n", len(selectedFiles))
+	} else {
+	    prompt := &survey.MultiSelect{
+	        Message:  "Select jar files to decompile (use arrow keys to navigate, space to select/deselect, enter to confirm):",
+	        Options:  options,
+	        PageSize: 40, // 每页显示40个选项
+	    }
+	
+	    err = survey.AskOne(prompt, &selectedFiles)
+	    if err != nil {
+	        fmt.Printf("Error during selection: %v\n", err)
+	        return
+	    }
+	
+	    if len(selectedFiles) == 0 {
+	        fmt.Println("No files selected, skipping jar decompilation.")
+	        return
+	    }
 	}
 
 	// 反编译选中的文件
 	fmt.Printf("\nDecompiling %d selected jar files...\n", len(selectedFiles))
-	
+
 	if Common.UseGoroutine {
-		// 使用goroutine并发反编译
-		decompileWithGoroutines(selectedFiles, jarFiles, location)
+	    // 使用goroutine并发反编译
+	    decompileWithGoroutines(selectedFiles, jarFiles, location)
 	} else {
-		// 串行反编译
-		for _, selectedFile := range selectedFiles {
-			// 找到完整路径
-			for _, jarFile := range jarFiles {
-				if filepath.Base(jarFile) == selectedFile {
-					fmt.Printf("Decompiling %s...\n", selectedFile)
-					outputDir := filepath.Join(location, "createdabase", "src1")
-					decompileJarFile(jarFile, outputDir, selectedFile)
-					break
-				}
-			}
-		}
+	    // 串行反编译
+	    for _, selectedFile := range selectedFiles {
+	        // 找到完整路径
+	        for _, jarFile := range jarFiles {
+	            if filepath.Base(jarFile) == selectedFile {
+	                fmt.Printf("Decompiling %s...\n", selectedFile)
+	                outputDir := filepath.Join(location, "createdabase", "src1")
+	                decompileJarFile(jarFile, outputDir, selectedFile)
+	                break
+	            }
+	        }
+	    }
 	}
 	fmt.Println("Jar decompilation completed.")
 }

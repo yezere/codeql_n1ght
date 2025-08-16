@@ -26,3 +26,6 @@ var ExtraSourceDir string
 
 // 清理缓存配置
 var CleanCache bool
+
+// 新增：依赖选择模式（none|all；为空表示交互选择）
+var DependencySelection string
