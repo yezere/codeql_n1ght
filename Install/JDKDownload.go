@@ -77,7 +77,7 @@ func DownloadJDK() error {
 
 	// 自动解压
 	jdkDir := filepath.Join(toolsDir, "jdk")
-	if err := ExtractInstallZip(filePath, jdkDir); err != nil {
+	if err := ExtractInstallZipWithProgress(filePath, jdkDir); err != nil {
 		return fmt.Errorf("解压JDK失败: %v", err)
 	}
 

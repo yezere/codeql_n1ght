@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -60,9 +61,31 @@ func (ce *CommandExecutor) ExecuteCommand(executablePath string, args ...string)
 	return string(output), nil
 }
 
+// getExecutableName 根据操作系统返回正确的可执行文件名
+func getExecutableName(baseName string) string {
+	if runtime.GOOS == "windows" {
+		if baseName == "ant" {
+			return "ant.bat"
+		}
+		if !strings.HasSuffix(baseName, ".exe") {
+			return baseName + ".exe"
+		}
+		return baseName
+	}
+	return baseName
+}
+
+// getScriptName 根据操作系统返回正确的脚本文件名
+func getScriptName(baseName string) string {
+	if runtime.GOOS == "windows" {
+		return baseName + ".bat"
+	}
+	return baseName + ".sh"
+}
+
 // ExecuteJavaCommand 执行Java命令
 func (ce *CommandExecutor) ExecuteJavaCommand(args ...string) (string, error) {
-	javaPath, err := ce.GetExecutablePath("JAVA_HOME", "jdk", "java.exe")
+	javaPath, err := ce.GetExecutablePath("JAVA_HOME", "jdk", getExecutableName("java"))
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +94,7 @@ func (ce *CommandExecutor) ExecuteJavaCommand(args ...string) (string, error) {
 
 // ExecuteCodeQLCommand 执行CodeQL命令
 func (ce *CommandExecutor) ExecuteCodeQLCommand(args ...string) (string, error) {
-	codeqlPath, err := ce.GetExecutablePath("CODEQL_HOME", "codeql", "codeql.exe")
+	codeqlPath, err := ce.GetExecutablePath("CODEQL_HOME", "codeql", getExecutableName("codeql"))
 	if err != nil {
 		return "", err
 	}
@@ -80,7 +103,7 @@ func (ce *CommandExecutor) ExecuteCodeQLCommand(args ...string) (string, error) 
 
 // ExecuteAntCommand 执行Ant命令
 func (ce *CommandExecutor) ExecuteAntCommand(args ...string) (string, error) {
-	antPath, err := ce.GetExecutablePath("ANT_HOME", "ant", "ant.bat")
+	antPath, err := ce.GetExecutablePath("ANT_HOME", "ant", getExecutableName("ant"))
 	if err != nil {
 		return "", err
 	}
@@ -140,46 +163,11 @@ func (ce *CommandExecutor) GetProcyonVersion() (string, error) {
 
 // GetTomcatVersion 获取Tomcat版本信息
 func (ce *CommandExecutor) GetTomcatVersion() (string, error) {
-	// 首先检查CATALINA_HOME环境变量
-	catalinaHome := os.Getenv("CATALINA_HOME")
-	if catalinaHome != "" {
-		versionScript := filepath.Join(catalinaHome, "bin", "version.bat")
-		if FileExists(versionScript) {
-			output, err := ce.ExecuteCommand(versionScript)
-			if err == nil {
-				lines := strings.Split(output, "\n")
-				for _, line := range lines {
-					if strings.Contains(line, "Server version:") {
-						return strings.TrimSpace(strings.Split(line, ":")[1]), nil
-					}
-				}
-			}
-		}
-	}
-
-	// 如果CATALINA_HOME不存在，检查tools目录
+	// 检查tools目录下的tomcat
 	tomcatPath := filepath.Join(ce.ToolsPath, "tomcat")
 
-	// 检查apache-tomcat-9.0.27目录
-	tomcatVersionPath := filepath.Join(tomcatPath, "apache-tomcat-9.0.27")
-	if _, err := os.Stat(tomcatVersionPath); err == nil {
-		versionScript := filepath.Join(tomcatVersionPath, "bin", "version.bat")
-		if FileExists(versionScript) {
-			output, err := ce.ExecuteCommand(versionScript)
-			if err == nil {
-				lines := strings.Split(output, "\n")
-				for _, line := range lines {
-					if strings.Contains(line, "Server version:") {
-						return strings.TrimSpace(strings.Split(line, ":")[1]), nil
-					}
-				}
-			}
-		}
-		return "9.0.27", nil // 已知版本
-	}
-
-	// 检查通用tomcat目录
-	versionScript := filepath.Join(tomcatPath, "bin", "version.bat")
+	// 首先尝试执行version脚本
+	versionScript := filepath.Join(tomcatPath, "bin", getScriptName("version"))
 	if FileExists(versionScript) {
 		output, err := ce.ExecuteCommand(versionScript)
 		if err == nil {
@@ -190,6 +178,32 @@ func (ce *CommandExecutor) GetTomcatVersion() (string, error) {
 				}
 			}
 		}
+	}
+
+	// 尝试从RELEASE-NOTES文件读取版本
+	releaseNotes := filepath.Join(tomcatPath, "RELEASE-NOTES")
+	if data, err := os.ReadFile(releaseNotes); err == nil {
+		content := string(data)
+		lines := strings.Split(content, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "Apache Tomcat Version") {
+				parts := strings.Split(line, "Version")
+				if len(parts) > 1 {
+					return strings.TrimSpace(parts[1]), nil
+				}
+			}
+		}
+	}
+
+	// 检查是否是已知版本目录结构
+	tomcatVersionPath := filepath.Join(tomcatPath, "apache-tomcat-9.0.27")
+	if _, err := os.Stat(tomcatVersionPath); err == nil {
+		return "9.0.27", nil
+	}
+
+	// 检查tomcat目录是否存在
+	if _, err := os.Stat(tomcatPath); err == nil {
+		return "已安装 (版本未知)", nil
 	}
 
 	return "", fmt.Errorf("无法获取Tomcat版本信息")

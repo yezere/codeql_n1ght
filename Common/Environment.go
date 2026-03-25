@@ -194,7 +194,7 @@ func GetToolVersions() map[string]string {
 	executor := NewCommandExecutor(toolsDir)
 
 	// 检查JDK并获取版本
-	if executor.CheckToolAvailability("JAVA_HOME", "jdk", "java.exe") {
+	if executor.CheckToolAvailability("JAVA_HOME", "jdk", getExecutableName("java")) {
 		if version, err := executor.GetJavaVersion(); err == nil {
 			versions["JDK"] = version
 		} else {
@@ -205,7 +205,7 @@ func GetToolVersions() map[string]string {
 	}
 
 	// 检查CodeQL并获取版本
-	if executor.CheckToolAvailability("CODEQL_HOME", "codeql", "codeql.exe") {
+	if executor.CheckToolAvailability("CODEQL_HOME", "codeql", getExecutableName("codeql")) {
 		if version, err := executor.GetCodeQLVersion(); err == nil {
 			versions["CodeQL"] = version
 		} else {
@@ -216,7 +216,7 @@ func GetToolVersions() map[string]string {
 	}
 
 	// 检查Ant并获取版本
-	if executor.CheckToolAvailability("ANT_HOME", "ant", "ant.bat") {
+	if executor.CheckToolAvailability("ANT_HOME", "ant", getExecutableName("ant")) {
 		if version, err := executor.GetAntVersion(); err == nil {
 			versions["Ant"] = version
 		} else {
@@ -256,19 +256,39 @@ func PrintToolVersions() {
 
 // getHalfSystemMemoryGB 获取系统内存的一半（以GB为单位）
 func getHalfSystemMemoryGB() int {
-	// 获取系统总内存（字节）
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	// 使用runtime包获取系统内存信息
-	// 注意：runtime.MemStats主要用于Go程序的内存统计，这里我们使用一个更直接的方法
-	// 在Windows上，我们可以通过执行系统命令来获取内存信息
 	if runtime.GOOS == "windows" {
 		return getWindowsMemoryGB() / 2
 	}
+	return getLinuxMemoryGB() / 2
+}
 
-	// 对于其他系统，使用默认值
-	return 16 // 默认16GB
+// getLinuxMemoryGB 获取Linux系统的总内存（GB）
+func getLinuxMemoryGB() int {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		fmt.Printf("读取/proc/meminfo失败，使用默认值16GB: %v\n", err)
+		return 16
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "MemTotal:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				memoryKB, err := strconv.ParseInt(fields[1], 10, 64)
+				if err == nil {
+					memoryGB := int(memoryKB / (1024 * 1024))
+					if memoryGB > 0 {
+						return memoryGB
+					}
+				}
+			}
+			break
+		}
+	}
+
+	fmt.Println("解析系统内存失败，使用默认值16GB")
+	return 16
 }
 
 // getWindowsMemoryGB 获取Windows系统的总内存（GB）

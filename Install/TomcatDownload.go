@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // CheckTomcatInstalled 检查Apache Tomcat是否已安装在tools目录下
@@ -33,9 +34,17 @@ func DownloadTomcat() error {
 		return fmt.Errorf("创建tools目录失败: %v", err)
 	}
 
-	// Apache Tomcat 9.0.27下载链接
-	downloadURL := "https://archive.apache.org/dist/tomcat/tomcat-9/v9.0.27/bin/apache-tomcat-9.0.27.zip"
-	fileName := "apache-tomcat-9.0.27.zip"
+	// 根据操作系统选择下载链接
+	var downloadURL string
+	var fileName string
+	switch runtime.GOOS {
+	case "windows":
+		downloadURL = "https://archive.apache.org/dist/tomcat/tomcat-9/v9.0.27/bin/apache-tomcat-9.0.27.zip"
+		fileName = "apache-tomcat-9.0.27.zip"
+	default:
+		downloadURL = "https://archive.apache.org/dist/tomcat/tomcat-9/v9.0.27/bin/apache-tomcat-9.0.27.tar.gz"
+		fileName = "apache-tomcat-9.0.27.tar.gz"
+	}
 
 	// 下载文件
 	filePath := filepath.Join(toolsDir, fileName)
@@ -47,17 +56,17 @@ func DownloadTomcat() error {
 
 	// 自动解压
 	tomcatDir := filepath.Join(toolsDir, "tomcat")
-	if err := ExtractInstallZip(filePath, tomcatDir); err != nil {
+	if err := ExtractInstallZipWithProgress(filePath, tomcatDir); err != nil {
 		return fmt.Errorf("解压Apache Tomcat失败: %v", err)
 	}
 
 	fmt.Printf("Apache Tomcat解压完成: %s\n", tomcatDir)
 
-	// 删除下载的zip文件
+	// 删除下载的文件
 	if err := os.Remove(filePath); err != nil {
 		fmt.Printf("警告: 删除下载文件失败: %v\n", err)
 	} else {
-		fmt.Println("已删除下载的zip文件")
+		fmt.Println("已删除下载的压缩文件")
 	}
 
 	fmt.Println("Apache Tomcat安装完成")
